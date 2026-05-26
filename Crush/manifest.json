@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Quick Link Opener",
+  "version": "1.0.0",
+  "description": "Dán nhiều link lẫn text, tự trích xuất và mở từng tab theo thứ tự.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Quick Link Opener"
+  },
+  "permissions": ["tabs", "activeTab"],
+  "host_permissions": ["https://*.coursera.org/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.coursera.org/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

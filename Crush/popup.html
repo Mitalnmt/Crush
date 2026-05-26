@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Link Opener</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Quick Link Opener</h1>
+    <p class="subtitle">Dán link lẫn text, extension sẽ tự nhận diện và mở tab theo thứ tự.</p>
+  </header>
+
+  <main>
+    <label for="input">Dán nội dung vào đây</label>
+    <textarea
+      id="input"
+      rows="8"
+      placeholder="Dán link Coursera, Excel, hoặc bất kỳ đoạn text nào có URL..."
+    ></textarea>
+
+    <div class="quiz-box">
+      <label for="quizAnswersInput">Đáp án quiz (mỗi dòng: số. đáp án)</label>
+      <textarea
+        id="quizAnswersInput"
+        rows="3"
+        placeholder="1. c&#10;2. a&#10;3. b&#10;4. a,b&#10;5. c,d"
+      ></textarea>
+      <div class="quiz-actions">
+        <button id="copyQuizBtn" type="button" class="btn secondary">Copy quiz</button>
+        <button id="autoQuizBtn" type="button" class="btn secondary">Auto điền quiz</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="parseBtn" type="button" class="btn secondary">Phân tích link</button>
+      <button id="openBtn" type="button" class="btn primary" disabled>Mở tất cả tab</button>
+      <button id="clearBtn" type="button" class="btn ghost">Xóa</button>
+    </div>
+
+    <div class="toggle-row">
+      <label class="toggle-label">
+        <input type="checkbox" id="hideCompletedToggle" />
+        Ẩn mục đã hoàn thành (Coursera)
+      </label>
+    </div>
+
+    <section id="preview" class="preview hidden">
+      <div class="preview-header">
+        <h2>Link đã tìm thấy</h2>
+        <span id="count" class="badge">0</span>
+      </div>
+      <ol id="linkList"></ol>
+    </section>
+
+    <p id="status" class="status" aria-live="polite"></p>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>
