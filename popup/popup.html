@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crush</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="popup-brand">
+        <img src="../image/crush.png" alt="" class="popup-brand-icon" width="28" height="28" />
+        <h1>Crush</h1>
+      </div>
+      <div class="api-bar">
+        <div class="api-keys-header">
+          <span class="api-keys-label">Gemini API keys</span>
+          <button type="button" id="addGeminiApiKeyBtn" class="btn-add-key" title="Thêm API key">+</button>
+        </div>
+        <div id="geminiApiKeysList" class="api-keys-list"></div>
+        <div class="api-row-2">
+          <select id="geminiModelSelect" aria-label="Gemini model">
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+          </select>
+          <label class="toggle-label mini-toggle">
+            <input type="checkbox" id="geminiAutoToggle" />
+            GMN auto
+          </label>
+        </div>
+      </div>
+    </div>
+    <p class="subtitle">Dán link lẫn text, extension sẽ tự nhận diện và mở tab theo thứ tự.</p>
+  </header>
+
+  <main>
+    <div class="quiz-box">
+      <label for="quizAnswersInput">Đáp án quiz (mỗi dòng: số. đáp án)</label>
+      <textarea
+        id="quizAnswersInput"
+        rows="3"
+        placeholder="1. c&#10;2. a&#10;3. b&#10;4. a,b&#10;5. c,d"
+      ></textarea>
+      <div class="quiz-actions">
+        <button id="copyQuizBtn" type="button" class="btn secondary">Copy quiz</button>
+        <button id="autoQuizBtn" type="button" class="btn secondary">Auto điền quiz</button>
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <label class="toggle-label">
+        <input type="checkbox" id="hideCompletedToggle" />
+        Ẩn mục đã hoàn thành (Coursera)
+      </label>
+    </div>
+
+    <section class="popup-help-section">
+      <details class="popup-details">
+        <summary>Hướng dẫn</summary>
+        <ul class="popup-guide-list">
+          <li><b>Fast Quiz</b> — Chế độ làm quiz hàng loạt (gộp nhảy bài, làm bài, nộp). Khi đang chạy, dừng bằng nút <b>Dừng</b> trên popup giữa màn hình.</li>
+          <li><b>Nhảy</b> — Chọn bài assignment/quiz chưa hoàn thành đầu tiên trong danh sách module.</li>
+          <li><b>Quiz</b> — Lấy nội dung câu hỏi trên trang; nếu bật <b>GMN auto</b> ở trên thì gọi Gemini gợi ý đáp án.</li>
+          <li><b>Copy</b> — Copy toàn bộ câu hỏi (định dạng 1/A) ra clipboard.</li>
+          <li><b>Paste</b> — Điền đáp án từ ô trong menu hoặc clipboard, rồi nộp bài.</li>
+          <li><b>Skip</b> — Đánh dấu hoàn thành video/reading trong tuần đang xem.</li>
+          <li><b>Ẩn mục đã hoàn thành</b> — Ẩn dòng đã tick trên danh sách Coursera.</li>
+          <li><b>Copy quiz / Auto điền</b> — Làm quiz từ popup khi đang ở trang bài.</li>
+          <li><b>Mở link</b> — Nhận URL trong text và mở nhiều tab.</li>
+          <li><b>Thu gọn menu</b> — Bấm icon Crush trên trang để gấp menu thành nút tròn.</li>
+        </ul>
+      </details>
+
+      <details class="popup-details">
+        <summary>Keymap</summary>
+        <p class="popup-keymap-hint">Phím tắt trên Coursera (không gõ trong ô input). Ví dụ: alt+f, ctrl+shift+q</p>
+        <div id="keymapFields" class="popup-keymap-fields"></div>
+        <div class="popup-keymap-actions">
+          <button type="button" id="keymapResetBtn" class="btn secondary">Reset</button>
+          <button type="button" id="keymapSaveBtn" class="btn primary">Lưu</button>
+        </div>
+        <p id="keymapStatus" class="popup-keymap-status" aria-live="polite"></p>
+      </details>
+    </section>
+
+    <section id="preview" class="preview hidden">
+      <div class="preview-header">
+        <h2>Link đã tìm thấy</h2>
+        <span id="count" class="badge">0</span>
+      </div>
+      <ol id="linkList"></ol>
+    </section>
+
+    <p id="status" class="status" aria-live="polite"></p>
+
+    <section class="link-opener-section">
+      <label for="input">Dán nội dung vào đây</label>
+      <textarea
+        id="input"
+        class="link-opener-input"
+        rows="3"
+        placeholder="Dán link Coursera, Excel, hoặc bất kỳ đoạn text nào có URL..."
+      ></textarea>
+
+      <div class="actions">
+        <button id="parseBtn" type="button" class="btn secondary">Phân tích link</button>
+        <button id="openBtn" type="button" class="btn primary" disabled>Mở tất cả tab</button>
+        <button id="clearBtn" type="button" class="btn ghost">Xóa</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

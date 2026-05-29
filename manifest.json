@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Crush",
+  "version": "1.1.0",
+  "description": "Dán nhiều link lẫn text, tự trích xuất và mở từng tab theo thứ tự.",
+  "icons": {
+    "16": "image/crush.png",
+    "32": "image/crush.png",
+    "48": "image/crush.png",
+    "128": "image/crush.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Crush",
+    "default_icon": {
+      "16": "image/crush.png",
+      "32": "image/crush.png",
+      "48": "image/crush.png",
+      "128": "image/crush.png"
+    }
+  },
+  "permissions": ["tabs", "activeTab", "clipboardRead", "clipboardWrite", "storage"],
+  "host_permissions": ["https://*.coursera.org/*", "https://generativelanguage.googleapis.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/script.js", "image/crush.png"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["image/crush.png"],
+      "matches": ["https://*.coursera.org/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.coursera.org/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
