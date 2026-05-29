@@ -1,6 +1,6 @@
 # Crush
 
-Extension Chrome hỗ trợ học Coursera: mở nhiều link, menu tiện ích trên trang khóa học, và các thao tác quiz/video nhanh hơn.
+Extension Chrome hỗ trợ Crush: mở nhiều link, menu tiện ích trên trang khóa học, và các thao tác quiz/video nhanh hơn.
 
 ## Cài đặt
 
@@ -32,20 +32,3 @@ Menu có thể **thu gọn** bằng icon Crush trên trang (thành nút tròn).
 | **Skip** | Đánh dấu hoàn thành video/reading trong tuần đang xem. |
 
 Phím tắt mặc định (có thể đổi trong **Keymap**): `Alt+J` Nhảy, `Alt+Q` Quiz, `Alt+V` Paste, `Alt+S` Skip, `Alt+F` Fast Quiz, `Alt+X` Dừng Fast Quiz, `Alt+C` Thu gọn menu.
-
-## Cấu trúc thư mục
-
-```
-Crush/
-├── manifest.json
-├── image/              # Icon extension
-├── src/                # Script chạy trên Coursera & background
-├── popup/              # Giao diện popup
-└── tham-khao/          # Tài liệu & mã tham khảo (không dùng khi build)
-```
-
-## Lưu ý
-
-- Extension chỉ hoạt động trên **coursera.org**.
-- API Gemini do bạn tự cung cấp; không chia sẻ key công khai.
-- Dùng extension phù hợp quy định khóa học và điều khoản Coursera.
