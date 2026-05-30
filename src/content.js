@@ -36,6 +36,8 @@
   const QUIZ_ROW_ANSWERS_ID = "coursera-qlo-row-answers";
   const QUIZ_ROW_ACTIONS_ID = "coursera-qlo-row-actions";
   const QUIZ_ANSWERS_TEXTAREA_ID = "coursera-qlo-answers-textarea";
+  const GEMINI_AUTO_ROW_ID = "coursera-qlo-row-gmn-auto";
+  const GEMINI_AUTO_TOGGLE_ID = "coursera-qlo-gmn-auto-toggle";
   const GEMINI_AUTO_STORAGE = "geminiAutoEnabled";
   const TOAST_ID = "coursera-qlo-toast";
   const TOAST_STACK_ID = "coursera-qlo-toast-stack";
@@ -897,7 +899,64 @@
       document.querySelectorAll(selector).forEach((el) => found.add(el));
     }
 
-    return sortByDocumentOrder(Array.from(found));
+    return dedupeNestedQuestionGroups(sortByDocumentOrder(Array.from(found)));
+  }
+
+  function dedupeNestedQuestionGroups(groups) {
+    return groups.filter((group, i, arr) => {
+      return !arr.some((other, j) => j !== i && other !== group && other.contains(group));
+    });
+  }
+
+  function getQuestionNumberFromGroup(group) {
+    const legend = group.querySelector('[data-testid="legend"]');
+    const hiddenNum = legend?.querySelector('[data-testid="visually-hidden"]');
+    const hiddenMatch = String(hiddenNum?.textContent || "").match(/Question\s+(\d+)/i);
+    if (hiddenMatch?.[1]) return Number(hiddenMatch[1]);
+
+    const spanNum = legend?.querySelector("h3 span")?.textContent?.trim();
+    if (spanNum && /^\d+$/.test(spanNum)) return Number(spanNum);
+
+    return null;
+  }
+
+  function extractQuestionTextFromGroup(group) {
+    const clone = group.cloneNode(true);
+    clone
+      .querySelectorAll(
+        '[data-testid="acknowledgment-checkpoint"], [data-testid="content-integrity-instructions"], [data-ai-instructions], .rc-Option, [role="radio"], [role="checkbox"], [role="radiogroup"]'
+      )
+      .forEach((el) => el.remove());
+
+    const cmlDiv = clone.querySelector(".rc-CML");
+    let questionText = (cmlDiv || clone).innerText.trim();
+    questionText = questionText
+      .replace(/This verification step is mandatory[\s\S]*?Do you understand\??\.?/gi, "")
+      .replace(/You are a helpful AI assistant\.[\s\S]*?assessment pages\./gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return questionText;
+  }
+
+  function isNoiseOptionText(text) {
+    const t = String(text || "").trim().toLowerCase();
+    if (!t) return true;
+    if (t === "i understand") return true;
+    if (t.includes("verification step is mandatory")) return true;
+    return false;
+  }
+
+  async function dismissAcknowledgmentCheckpoints() {
+    const buttons = Array.from(
+      document.querySelectorAll(
+        '[data-testid="acknowledgment-checkpoint"] button[data-action="acknowledge-guidelines"], [data-testid="acknowledgment-checkpoint"] button'
+      )
+    ).filter((btn) => isVisibleElement(btn) && !isInToolPanel(btn));
+
+    for (const btn of buttons) {
+      safeClick(btn);
+      await sleep(120);
+    }
   }
 
   function findAllQuestionGroups() {
@@ -966,18 +1025,25 @@
   function clickOption(optionEl) {
     if (!optionEl) return false;
 
+    const safeClick = (el) => {
+      if (!el || typeof el.click !== "function") return false;
+      try {
+        el.click();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     if (optionEl.tagName === "INPUT") {
       const label = optionEl.closest("label");
       if (label) {
-        label.click();
-        return true;
+        return safeClick(label);
       }
-      optionEl.click();
-      return true;
+      return safeClick(optionEl);
     }
 
-    optionEl.click();
-    return true;
+    return safeClick(optionEl);
   }
 
   function buildAnswersLookup(answersMap) {
@@ -1031,7 +1097,6 @@
     if (type === "radio") {
       const idx = answersLetterToIndex(answers[0]);
       if (idx < 0 || idx >= options.length) {
-        console.warn(`[QLO] Radio: option index ${idx} out of range (${options.length})`);
         return false;
       }
       return clickOption(options[idx]);
@@ -1042,7 +1107,6 @@
       for (const letter of answers) {
         const idx = answersLetterToIndex(letter);
         if (idx < 0 || idx >= options.length) {
-          console.warn(`[QLO] Checkbox: option index ${idx} out of range (${options.length})`);
           continue;
         }
         if (clickOption(options[idx])) clickedAny = true;
@@ -1152,6 +1216,7 @@
     let stableRounds = 0;
 
     for (let round = 0; round < 20; round += 1) {
+      await dismissAcknowledgmentCheckpoints();
       const groups = findAllQuestionGroups();
       if (groups.length > lastCount) {
         lastCount = groups.length;
@@ -1161,6 +1226,11 @@
       } else {
         stableRounds += 1;
       }
+
+      for (const group of groups) {
+        group.scrollIntoView?.({ behavior: "instant", block: "center" });
+      }
+      await sleep(200);
 
       const nextBtn = findQuizNextButton();
       if (nextBtn) {
@@ -1186,18 +1256,8 @@
 
     for (let i = 0; i < groups.length; i += 1) {
       const group = groups[i];
-
-      let questionText = "";
-      const cmlDiv = group.querySelector(".rc-CML");
-      if (cmlDiv) {
-        questionText = cmlDiv.innerText.trim();
-      } else {
-        const clone = group.cloneNode(true);
-        clone
-          .querySelectorAll('.rc-Option, [role="radio"], [role="checkbox"]')
-          .forEach((el) => el.remove());
-        questionText = clone.innerText.trim();
-      }
+      const questionNumber = getQuestionNumberFromGroup(group) || i + 1;
+      let questionText = extractQuestionTextFromGroup(group);
 
       // Gửi luôn link ảnh (nếu có) để Gemini hiểu được biểu đồ/hình minh họa.
       const imgs = Array.from(group.querySelectorAll("img"))
@@ -1220,15 +1280,26 @@
 
       for (const opt of optionsElements) {
         const text = extractOptionText(opt);
-        if (text) options.push(text);
+        if (text && !isNoiseOptionText(text)) options.push(text);
       }
 
-      if (questionText && options.length > 0) {
-        quizData.push({ questionText, options });
-      }
+      if (!questionText) continue;
+
+      quizData.push({
+        questionNumber,
+        questionText,
+        options,
+      });
     }
 
+    quizData.sort((a, b) => a.questionNumber - b.questionNumber);
     return quizData;
+  }
+
+  async function collectFullQuizContent() {
+    await ensureAllQuestionsLoaded();
+    await dismissAcknowledgmentCheckpoints();
+    return extractFullQuizContent();
   }
 
   function getItemPrimaryLink(li) {
@@ -1292,15 +1363,24 @@
     window.setTimeout(() => incomplete.click(), 250);
   }
 
-  function formatQuizForClipboard(quizData) {
-    let output = "";
+  const QUIZ_CLIPBOARD_PROMPT =
+    "Trả lời các câu hỏi dưới đây và đưa ra đáp án (A,B,C,D) theo định dạng 1/A xong xuống dòng 2/B. Nếu câu hỏi là câu chọn nhiều có thể viết giống như sau: 1/A,B.\n\n";
+
+  function formatQuizForClipboard(quizData, options = {}) {
+    const includePrompt = options.includePrompt === true;
+    let output = includePrompt ? QUIZ_CLIPBOARD_PROMPT : "";
     for (let i = 0; i < quizData.length; i += 1) {
       const q = quizData[i];
-      output += `Câu ${i + 1}: ${q.questionText}\n`;
-      for (let optIdx = 0; optIdx < q.options.length; optIdx += 1) {
-        const letter =
-          optIdx < 26 ? String.fromCharCode(65 + optIdx) : `Opt${optIdx + 1}`;
-        output += `${letter}. ${q.options[optIdx]}\n`;
+      const num = Number.isFinite(q?.questionNumber) ? q.questionNumber : i + 1;
+      output += `Câu ${num}: ${q.questionText}\n`;
+      if (Array.isArray(q.options) && q.options.length > 0) {
+        for (let optIdx = 0; optIdx < q.options.length; optIdx += 1) {
+          const letter =
+            optIdx < 26 ? String.fromCharCode(65 + optIdx) : `Opt${optIdx + 1}`;
+          output += `${letter}. ${q.options[optIdx]}\n`;
+        }
+      } else {
+        output += "(Không có lựa chọn A/B/C — câu tự điền)\n";
       }
       output += "\n";
     }
@@ -1548,22 +1628,25 @@
       }
     }
 
-    await ensureAllQuestionsLoaded();
-
-    const quizData = extractFullQuizContent();
+    const quizData = await collectFullQuizContent();
     if (!Array.isArray(quizData) || quizData.length === 0) {
-      showToast("Không tìm thấy nội dung quiz để copy.");
+      showToast("Không tìm thấy nội dung quiz.");
       return false;
     }
 
     const expectedFromPage = getExpectedQuestionCountFromPage();
     if (expectedFromPage && quizData.length < expectedFromPage) {
+      const nums = quizData.map((q) => q.questionNumber).join(", ");
       showToast(
-        `Chỉ đọc được ${quizData.length}/${expectedFromPage} câu. Cuộn hết quiz rồi bấm Quiz lại.`
+        `Chỉ đọc được ${quizData.length}/${expectedFromPage} câu (đã có: ${nums}). Cuộn hết quiz rồi thử lại.`
       );
     }
 
-    const formatted = formatQuizForClipboard(quizData);
+    if (await isGeminiAutoEnabled()) {
+      return true;
+    }
+
+    const formatted = formatQuizForClipboard(quizData, { includePrompt: true });
     try {
       await navigator.clipboard.writeText(formatted);
       showToast(`Đã copy ${quizData.length} câu quiz vào clipboard`);
@@ -1643,6 +1726,51 @@
     } catch {
       // ignore
     }
+  }
+
+  async function syncGeminiAutoToggleFromStorage() {
+    const checkbox = document.getElementById(GEMINI_AUTO_TOGGLE_ID);
+    if (!checkbox) return;
+    checkbox.checked = await isGeminiAutoEnabled();
+  }
+
+  function ensureGeminiAutoToggleRow(actions) {
+    if (!actions) return null;
+    let row = document.getElementById(GEMINI_AUTO_ROW_ID);
+    if (!row) {
+      row = document.createElement("div");
+      row.id = GEMINI_AUTO_ROW_ID;
+      row.className = "qlo-panel-row qlo-gmn-auto-row";
+
+      const label = document.createElement("label");
+      label.className = "qlo-gmn-auto-label";
+      label.setAttribute("for", GEMINI_AUTO_TOGGLE_ID);
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = GEMINI_AUTO_TOGGLE_ID;
+
+      const span = document.createElement("span");
+      span.textContent = "GMN auto";
+
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      row.appendChild(label);
+
+      checkbox.addEventListener("change", async () => {
+        await setGeminiAutoEnabled(checkbox.checked);
+        showToast(checkbox.checked ? "Đã bật GMN auto" : "Đã tắt GMN auto");
+      });
+
+      void syncGeminiAutoToggleFromStorage();
+    }
+
+    if (row.parentElement !== actions) {
+      actions.appendChild(row);
+    } else if (row !== actions.lastElementChild) {
+      actions.appendChild(row);
+    }
+    return row;
   }
 
   function getAbsoluteHref(href) {
@@ -2084,9 +2212,8 @@
     setGeminiWaitOverlay(true, "Đang đọc toàn bộ câu hỏi...");
     try {
       if (runId && !isRunActive(runId)) return false;
-      await ensureAllQuestionsLoaded();
 
-      const quizData = extractFullQuizContent();
+      const quizData = await collectFullQuizContent();
       if (!Array.isArray(quizData) || quizData.length === 0) {
         showToast("Không tìm thấy nội dung quiz để gửi Gemini.");
         return false;
@@ -2168,6 +2295,10 @@
       /^\/learn\/.+\/home\/module\/\d+/i,
       /^\/learn\/.+\/lecture\/.+/i,
       /^\/learn\/.+\/supplement\/.+/i,
+      /^\/learn\/.+\/ungradedWidget\/.+/i,
+      /^\/learn\/.+\/gradedWidget\/.+/i,
+      /^\/learn\/.+\/ungradedLti\/.+/i,
+      /^\/learn\/.+\/gradedLti\/.+/i,
       /^\/learn\/.+\/(quiz|exam|practice)\/.+/i,
     ];
     return patterns.some((re) => re.test(path));
@@ -2320,20 +2451,51 @@
     return "";
   }
 
+  function getItemTypeNameFromPathSegment(segment) {
+    const raw = String(segment || "").trim();
+    if (!raw) return "";
+    if (raw === "lecture") return "lecture";
+    if (raw === "supplement") return "supplement";
+    if (/^ungradedwidget$/i.test(raw)) return "ungradedWidget";
+    if (/^gradedwidget$/i.test(raw)) return "gradedWidget";
+    if (/^ungradedlti$/i.test(raw)) return "ungradedLti";
+    if (/^gradedlti$/i.test(raw)) return "gradedLti";
+    return raw.charAt(0).toLowerCase() + raw.slice(1);
+  }
+
+  function getItemFromCurrentPath() {
+    const m = (location.pathname || "").match(
+      /\/(lecture|supplement|ungradedWidget|gradedWidget|ungradedLti|gradedLti)\/([^/?#]+)/i
+    );
+    if (!m?.[2]) return null;
+    const id = decodeURIComponent(m[2]);
+    if (!id) return null;
+    return {
+      id,
+      slug: id,
+      timeCommitment: 600000,
+      isLocked: false,
+      contentSummary: {
+        typeName: getItemTypeNameFromPathSegment(m[1]),
+      },
+    };
+  }
+
   function getItemsFromDomFallback() {
     const links = Array.from(
       document.querySelectorAll(
-        'a[href*="/learn/"][href*="/lecture/"], a[href*="/learn/"][href*="/supplement/"]'
+        'a[href*="/learn/"][href*="/lecture/"], a[href*="/learn/"][href*="/supplement/"], a[href*="/learn/"][href*="/ungradedWidget/"], a[href*="/learn/"][href*="/gradedWidget/"], a[href*="/learn/"][href*="/ungradedLti/"], a[href*="/learn/"][href*="/gradedLti/"]'
       )
     );
 
     const byId = new Map();
     for (const a of links) {
       const href = a.getAttribute("href") || "";
-      const m = href.match(/\/(lecture|supplement)\/([^/?#]+)/i);
+      const m = href.match(
+        /\/(lecture|supplement|ungradedWidget|gradedWidget|ungradedLti|gradedLti)\/([^/?#]+)/i
+      );
       if (!m?.[2]) continue;
 
-      const type = String(m[1]).toLowerCase();
       const id = decodeURIComponent(m[2]);
       if (!id || byId.has(id)) continue;
 
@@ -2343,9 +2505,14 @@
         timeCommitment: 600000,
         isLocked: false,
         contentSummary: {
-          typeName: type === "lecture" ? "lecture" : "supplement",
+          typeName: getItemTypeNameFromPathSegment(m[1]),
         },
       });
+    }
+
+    const current = getItemFromCurrentPath();
+    if (current && !byId.has(current.id)) {
+      byId.set(current.id, current);
     }
 
     return Array.from(byId.values());
@@ -2542,13 +2709,28 @@
     return state === "Completed";
   }
 
+  async function getActiveSessionIdForCourse(courseId, userId) {
+    const url =
+      "https://www.coursera.org/api/onDemandSessionMemberships.v1" +
+      `?courseId=${encodeURIComponent(courseId)}` +
+      `&userId=${encodeURIComponent(userId)}` +
+      "&q=activeByUserAndCourse&fields=id,createdAt,sessionId,userId";
+    const { ok, json } = await courseraApiRequest(url, { method: "GET" });
+    if (!ok) return "";
+    return String(json?.elements?.[0]?.sessionId || "").trim();
+  }
+
   async function markWidgetCompletedDeep({ courseId, itemId, userId }) {
+    const sessionId = await getActiveSessionIdForCourse(courseId, userId);
     const key = `${userId}~${courseId}~${itemId}`;
     const url = `https://www.coursera.org/api/onDemandWidgetProgress.v1/${encodeURIComponent(key)}`;
-    const bodies = [
-      { data: { progressState: "Completed" } },
-      { progressState: "Completed" },
-    ];
+    const bodies = [];
+    if (sessionId) {
+      bodies.push({ progressState: "Completed", sessionId });
+      bodies.push({ data: { progressState: "Completed", sessionId } });
+    }
+    bodies.push({ progressState: "Completed" });
+    bodies.push({ data: { progressState: "Completed" } });
 
     for (const body of bodies) {
       const res = await courseraApiRequest(url, { method: "PUT", body: JSON.stringify(body) });
@@ -2683,19 +2865,29 @@
 
       const videos = targets.filter((it) => getSkipItemKind(it) === "lecture");
       const readings = targets.filter((it) => getSkipItemKind(it) === "supplement");
-      const others = targets.length - videos.length - readings.length;
+      const widgets = targets.filter((it) => getSkipItemKind(it) === "widget");
+      const ltis = targets.filter((it) => getSkipItemKind(it) === "lti");
+      const coaches = targets.filter((it) => getSkipItemKind(it) === "coach");
+      const others =
+        targets.length - videos.length - readings.length - widgets.length - ltis.length - coaches.length;
 
       const total = targets.length;
       if (total === 0) {
         const moduleHint = getModuleNumberFromPath() ? ` module ${getModuleNumberFromPath()}` : "";
-        showToast(`Không có video/reading để skip${moduleHint}.`);
+        showToast(`Không có bài (video/reading/widget) để skip${moduleHint}.`);
         return false;
       }
 
       const scopeHint = getModuleNumberFromPath() ? ` (module ${getModuleNumberFromPath()})` : "";
+      const parts = [];
+      if (videos.length) parts.push(`${videos.length} video`);
+      if (readings.length) parts.push(`${readings.length} reading`);
+      if (widgets.length) parts.push(`${widgets.length} plugin/widget`);
+      if (ltis.length) parts.push(`${ltis.length} LTI`);
+      if (coaches.length) parts.push(`${coaches.length} coach`);
+      if (others > 0) parts.push(`${others} khác`);
       showToast(
-        `Skip${scopeHint}: ${videos.length} video + ${readings.length} reading` +
-          (others > 0 ? ` + ${others} khác` : "") +
+        `Skip${scopeHint}: ${parts.join(" + ")}` +
           (usedMaterialsFallback ? " (fallback mode)" : "")
       );
       upsertProgressToast(0, total);
@@ -2726,7 +2918,7 @@
       } else {
         clearProgressToast();
         showToast(
-          `Skip completed: ${succeeded}/${total} (video: ${videos.length}, reading: ${readings.length}). Reload để cập nhật tick.`
+          `Skip completed: ${succeeded}/${total} (${parts.join(", ")}). Reload để cập nhật tick.`
         );
       }
       return succeeded > 0;
@@ -2878,10 +3070,15 @@
     void refreshToolKeymapCache();
     try {
       chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== "local" || !changes[TOOL_PANEL_KEYMAP_STORAGE_KEY]) return;
-        cachedToolKeymap = mergeKeymapWithDefaults(
-          changes[TOOL_PANEL_KEYMAP_STORAGE_KEY].newValue || {}
-        );
+        if (area !== "local") return;
+        if (changes[TOOL_PANEL_KEYMAP_STORAGE_KEY]) {
+          cachedToolKeymap = mergeKeymapWithDefaults(
+            changes[TOOL_PANEL_KEYMAP_STORAGE_KEY].newValue || {}
+          );
+        }
+        if (changes[GEMINI_AUTO_STORAGE]) {
+          void syncGeminiAutoToggleFromStorage();
+        }
       });
     } catch {
       // ignore
@@ -3201,6 +3398,32 @@
         border-color: #2563eb;
         box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
       }
+
+      .qlo-gmn-auto-row {
+        margin-top: 2px;
+        padding-top: 6px;
+        border-top: 1px solid #e2e8f0;
+        justify-content: center;
+      }
+
+      .qlo-gmn-auto-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #334155;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .qlo-gmn-auto-label input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        margin: 0;
+        cursor: pointer;
+        accent-color: #2563eb;
+      }
     `;
 
     document.head.appendChild(style);
@@ -3258,7 +3481,10 @@
     }
 
     const row3 = document.getElementById(QUIZ_ROW_ACTIONS_ID);
-    if (!row3) return;
+    if (!row3) {
+      if (actions) ensureGeminiAutoToggleRow(actions);
+      return;
+    }
 
     // Dọn nút GMN cũ nếu còn từ phiên bản trước.
     row3.querySelectorAll(".qlo-panel-btn").forEach((btn) => {
@@ -3266,24 +3492,35 @@
       if (text === "gmn") btn.remove();
     });
 
-    if (row3.querySelector(".qlo-panel-btn")) return;
+    if (row3.querySelector(".qlo-panel-btn")) {
+      if (actions) ensureGeminiAutoToggleRow(actions);
+      return;
+    }
 
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "qlo-panel-btn";
     copyBtn.textContent = "Copy";
     copyBtn.addEventListener("click", async () => {
-      const quizData = extractFullQuizContent();
-      if (!Array.isArray(quizData) || quizData.length === 0) {
-        showToast("Không tìm thấy nội dung quiz để copy.");
-        return;
-      }
-      const formatted = formatQuizForClipboard(quizData);
+      copyBtn.disabled = true;
       try {
+        const quizData = await collectFullQuizContent();
+        if (!Array.isArray(quizData) || quizData.length === 0) {
+          showToast("Không tìm thấy nội dung quiz để copy.");
+          return;
+        }
+        const expectedFromPage = getExpectedQuestionCountFromPage();
+        if (expectedFromPage && quizData.length < expectedFromPage) {
+          const nums = quizData.map((q) => q.questionNumber).join(", ");
+          showToast(`Copy ${quizData.length}/${expectedFromPage} câu (có: ${nums}).`);
+        }
+        const formatted = formatQuizForClipboard(quizData, { includePrompt: true });
         await navigator.clipboard.writeText(formatted);
-        showToast("Đã copy quiz vào clipboard");
+        showToast(`Đã copy ${quizData.length} câu quiz vào clipboard`);
       } catch {
         showToast("Không thể copy vào clipboard. Hãy thử lại.");
+      } finally {
+        copyBtn.disabled = false;
       }
     });
 
@@ -3340,6 +3577,8 @@
 
     row3.appendChild(copyBtn);
     row3.appendChild(pasteBtn);
+
+    if (actions) ensureGeminiAutoToggleRow(actions);
   }
 
   function ensureToolPanel() {
@@ -3446,17 +3685,25 @@
     copyBtn.className = "qlo-panel-btn";
     copyBtn.textContent = "Copy";
     copyBtn.addEventListener("click", async () => {
-      const quizData = extractFullQuizContent();
-      if (!Array.isArray(quizData) || quizData.length === 0) {
-        showToast("Không tìm thấy nội dung quiz để copy.");
-        return;
-      }
-      const formatted = formatQuizForClipboard(quizData);
+      copyBtn.disabled = true;
       try {
+        const quizData = await collectFullQuizContent();
+        if (!Array.isArray(quizData) || quizData.length === 0) {
+          showToast("Không tìm thấy nội dung quiz để copy.");
+          return;
+        }
+        const expectedFromPage = getExpectedQuestionCountFromPage();
+        if (expectedFromPage && quizData.length < expectedFromPage) {
+          const nums = quizData.map((q) => q.questionNumber).join(", ");
+          showToast(`Copy ${quizData.length}/${expectedFromPage} câu (có: ${nums}).`);
+        }
+        const formatted = formatQuizForClipboard(quizData, { includePrompt: true });
         await navigator.clipboard.writeText(formatted);
-        showToast("Đã copy quiz vào clipboard");
+        showToast(`Đã copy ${quizData.length} câu quiz vào clipboard`);
       } catch {
         showToast("Không thể copy vào clipboard. Hãy thử lại.");
+      } finally {
+        copyBtn.disabled = false;
       }
     });
 
@@ -3550,6 +3797,7 @@
     actions.appendChild(row1);
     actions.appendChild(row2);
     actions.appendChild(row3);
+    ensureGeminiAutoToggleRow(actions);
 
     panel.appendChild(actions);
     panel.appendChild(toggleBtn);
@@ -3581,8 +3829,14 @@
     }
 
     if (message.action === "getQuizContent") {
-      const quizData = extractFullQuizContent();
-      sendResponse({ quizData });
+      (async () => {
+        try {
+          const quizData = await collectFullQuizContent();
+          sendResponse({ quizData });
+        } catch {
+          sendResponse({ quizData: [] });
+        }
+      })();
       return true;
     }
 
