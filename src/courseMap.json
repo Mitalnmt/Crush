@@ -1,5 +1,24 @@
 [
   {
+    "code": "DBM302m",
+    "status": "done",
+    "spec": [
+      "/data-mining-foundations-practice/",
+      "/data-mining/"
+    ],
+    "moocs": [
+      "/cluster-analysis/",
+      "/data-mining-pipeline/",
+      "/data-mining-methods/",
+      "/data-mining-theory-practice-project/",
+      "/data-mining-project/",
+      "/data-patterns/",
+      "/datavisualization/",
+      "/text-mining/",
+      "/text-retrieval/"
+    ]
+  },
+  {
     "code": "ADA201c",
     "status": "done",
     "moocs": [
